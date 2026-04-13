@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "discord.js": "^14.26.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
