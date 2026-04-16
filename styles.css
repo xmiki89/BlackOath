@@ -1461,3 +1461,46 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
 }
+
+/* Vertrag Assign Panel */
+.vertraege-actions { display: flex; gap: 0.5rem; align-items: center; }
+.vertraege-assign-btn { background: var(--secondary-color); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; width: 32px; height: 32px; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.vertraege-assign-btn:hover { background: var(--hover-bg); }
+.vertrag-assign-panel { margin-top: 1rem; padding: 1rem; background: var(--secondary-color); border-radius: 8px; border: 1px solid var(--border-color); }
+.vertrag-members-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.vertrag-member-label { display: flex; align-items: center; gap: 0.4rem; color: var(--text-primary); background: var(--card-bg); padding: 0.4rem 0.75rem; border-radius: 6px; cursor: pointer; border: 1px solid var(--border-color); }
+.vertrag-member-label:hover { border-color: var(--accent-color); }
+.vertrag-note { width: 100%; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.6rem; margin-bottom: 0.75rem; resize: vertical; min-height: 70px; }
+.vertrag-save-btn { background: var(--accent-color); color: #000; border: none; border-radius: 6px; padding: 0.5rem 1.2rem; cursor: pointer; font-weight: 600; }
+.vertrag-save-btn:hover { opacity: 0.85; }
+
+.vertrag-assigned { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-left: 0.5rem; }
+.vertrag-assigned-tag { background: var(--accent-color); color: #000; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+.vertrag-assigned-note { color: var(--text-secondary); font-size: 0.8rem; width: 100%; margin-top: 0.25rem; }
+
+.vertraege-row-wrapper { display: flex; align-items: flex-start; gap: 1rem; }
+.vertrag-assigned-sidebar { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.4rem; min-width: 160px; }
+.vertrag-assigned-sidebar .vertrag-assigned-tag { background: var(--accent-color); color: #000; padding: 0.25rem 0.7rem; border-radius: 12px; font-size: 0.82rem; font-weight: 600; text-align: center; }
+.vertrag-assigned-sidebar .vertrag-assigned-note { color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem; }
+
+.vertraege-stueck { color: var(--text-secondary); margin-top: 0.25rem; display: flex; align-items: center; gap: 0.3rem; }
+.stueck-input { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary); padding: 0.2rem 0.4rem; width: 70px; text-align: center; font-size: 0.9rem; }
+.stueck-input:focus { outline: none; border-color: var(--accent-color); }
+
+.stueck-tracker { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.stueck-label { color: var(--text-secondary); font-size: 0.9rem; }
+.stueck-progress-bar { width: 100%; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; }
+.stueck-progress-fill { height: 100%; background: var(--accent-color); border-radius: 4px; transition: width 0.4s ease; }
+.stueck-controls { display: flex; gap: 0.5rem; align-items: center; }
+.stueck-input { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.35rem 0.6rem; width: 140px; }
+.stueck-add-btn { background: var(--accent-color); color: #000; border: none; border-radius: 6px; padding: 0.35rem 0.9rem; font-weight: 700; cursor: pointer; font-size: 1rem; }
+.stueck-add-btn:hover { opacity: 0.85; }
+
+.vertrag-member-delete { background: none; border: none; color: #000; cursor: pointer; font-size: 0.85rem; font-weight: 700; margin-left: 4px; padding: 0 2px; line-height: 1; opacity: 0.6; }
+.vertrag-member-delete:hover { opacity: 1; }
+
+.vertrag-member-stueck-row { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.5rem; }
+.member-stueck-input-row { display: flex; align-items: center; gap: 0.4rem; }
+.member-stueck-input { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.25rem 0.5rem; width: 80px; font-size: 0.85rem; }
+.member-stueck-input:focus { outline: none; border-color: var(--accent-color); }
+.member-stueck-total { color: var(--text-secondary); font-size: 0.8rem; }

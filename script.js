@@ -37,30 +37,38 @@ function userLogout() {
 }
 
 // Check if user is registered
-function checkRegistration() {
-    const isRegistered = localStorage.getItem('userRegistered');
+async function checkRegistration() {
     const registrationOverlay = document.getElementById('registrationOverlay');
     const dashboardContent = document.getElementById('dashboardContent');
     const logoutBtn = document.getElementById('userLogoutBtn');
-    
-    if (isRegistered === 'true') {
-        // User is registered, hide overlay and show dashboard
+
+    const stored = JSON.parse(localStorage.getItem('userRegistration') || '{}');
+    let isRegistered = false;
+
+    if (stored.name && stored.nachname) {
+        try {
+            const res = await fetch(`/check-member?name=${encodeURIComponent(stored.name)}&nachname=${encodeURIComponent(stored.nachname)}`);
+            const data = await res.json();
+            isRegistered = data.exists;
+        } catch (e) {
+            // Server nicht erreichbar, localStorage als Fallback
+            isRegistered = localStorage.getItem('userRegistered') === 'true';
+        }
+    }
+
+    if (!isRegistered) {
+        localStorage.removeItem('userRegistered');
+        localStorage.removeItem('userRegistration');
+    }
+
+    if (isRegistered) {
         registrationOverlay.classList.add('hidden');
         dashboardContent.classList.add('registered');
-        
-        // Show logout button
-        if (logoutBtn) {
-            logoutBtn.style.display = 'block';
-        }
+        if (logoutBtn) logoutBtn.style.display = 'block';
     } else {
-        // User is not registered, show overlay and hide dashboard
         registrationOverlay.classList.remove('hidden');
         dashboardContent.classList.remove('registered');
-        
-        // Hide logout button
-        if (logoutBtn) {
-            logoutBtn.style.display = 'none';
-        }
+        if (logoutBtn) logoutBtn.style.display = 'none';
     }
 }
 
@@ -75,13 +83,15 @@ function setupRegistrationForm() {
         const name = document.getElementById('regName').value.trim();
         const nachname = document.getElementById('regNachname').value.trim();
         const id = document.getElementById('regId').value.trim();
+        const email = document.getElementById('regEmail').value.trim();
+        const password = document.getElementById('regPassword').value.trim();
         
         // Clear previous messages
         messageDiv.innerHTML = '';
         messageDiv.className = '';
         
         // Validate inputs
-        if (!name || !nachname || !id) {
+        if (!name || !nachname || !id || !email || !password) {
             messageDiv.innerHTML = '<div class="registration-error">Bitte alle Felder ausfüllen!</div>';
             return;
         }
@@ -96,10 +106,21 @@ function setupRegistrationForm() {
             return;
         }
         
+        if (email.indexOf('@') === -1 || email.length < 5) {
+            messageDiv.innerHTML = '<div class="registration-error">Bitte gib eine gültige Email-Adresse ein!</div>';
+            return;
+        }
+        
+        if (password.length < 4) {
+            messageDiv.innerHTML = '<div class="registration-error">Passwort muss mindestens 4 Zeichen lang sein!</div>';
+            return;
+        }
+        
         // Save registration data
         const registrationData = {
             name: name,
             nachname: nachname,
+            email: email,
             id: id,
             registrationDate: new Date().toISOString(),
             fullName: `${name} ${nachname}`
@@ -109,7 +130,7 @@ function setupRegistrationForm() {
         localStorage.setItem('userRegistered', 'true');
         
         // Save to text file
-        saveMemberToFile(name, nachname, id);
+        saveMemberToFile(name, nachname, id, email, password);
         
         // Show success message
         messageDiv.innerHTML = '<div class="registration-success">Registrierung erfolgreich! Willkommen bei Black Oath.</div>';
@@ -129,7 +150,7 @@ function setupRegistrationForm() {
 }
 
 // Save member data to text file
-async function saveMemberToFile(name, nachname, id) {
+async function saveMemberToFile(name, nachname, id, email, password) {
     const timestamp = new Date().toLocaleString('de-DE', { 
         day: '2-digit', 
         month: '2-digit', 
@@ -139,25 +160,28 @@ async function saveMemberToFile(name, nachname, id) {
         second: '2-digit' 
     });
     
-    const memberData = `Name: ${name}, Nachname: ${nachname}, ID: ${id}, Datum: ${timestamp}\n`;
+    const memberData = JSON.stringify({ name, nachname, email, id, password });
     
     try {
         // Save via server endpoint
         const response = await fetch('/save-member', {
             method: 'POST',
             headers: {
-                'Content-Type': 'text/plain',
+                'Content-Type': 'application/json',
             },
             body: memberData
         });
         
         if (response.ok) {
             console.log('Mitgliedsdaten erfolgreich in Datei gespeichert');
+            return true;
         } else {
             console.error('Fehler beim Speichern der Mitgliedsdaten');
+            return false;
         }
     } catch (error) {
         console.error('Server nicht erreichbar:', error);
+        return false;
     }
 }
 function initializeChart() {
@@ -189,8 +213,10 @@ function setupNavigation() {
 
 // Setup real-time updates simulation
 function setupRealTimeUpdates() {
-    // All automatic updates deactivated
-    // setInterval(updateActivityTimes, 30000);
+    // Periodically verify registration status so a deleted member file forces re-registration.
+    setInterval(() => {
+        checkRegistration();
+    }, 3000);
 }
 
 // Aktualisieren Sie die Statistiken mit zufälligen Änderungen
@@ -292,10 +318,10 @@ function handleAction(action) {
 }
 
 // Handle navigation clicks
-function handleNavigation(pageName) {
+async function handleNavigation(pageName) {
     switch(pageName) {
         case 'mitglieder':
-            showMitglieder();
+            await showMitglieder();
             break;
         case 'dashboard':
             showDashboard();
@@ -341,12 +367,53 @@ function saveMemberRole(memberName, role) {
     const members = JSON.parse(localStorage.getItem('mitglieder') || '{}');
     members[memberName] = role;
     localStorage.setItem('mitglieder', JSON.stringify(members));
+    
+    // Update role in member file on server
+    const parts = memberName.trim().split(' ');
+    const name = parts[0] || '';
+    const nachname = parts.slice(1).join(' ') || '';
+    
+    fetch('/update-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, nachname, role })
+    }).then(response => {
+        if (response.ok) {
+            console.log('Rolle erfolgreich in Datei aktualisiert');
+        } else {
+            console.error('Fehler beim Aktualisieren der Rolle in Datei');
+        }
+    }).catch(error => {
+        console.error('Server nicht erreichbar für Rollen-Update:', error);
+    });
 }
 
 // Load saved member roles
-function loadSavedRoles() {
-    const members = JSON.parse(localStorage.getItem('mitglieder') || '{}');
-    return members;
+async function loadSavedRoles() {
+    const memberList = loadMemberList();
+    const roles = {};
+    
+    for (const member of memberList) {
+        const memberName = member.name;
+        const parts = memberName.trim().split(' ');
+        const name = parts[0] || '';
+        const nachname = parts.slice(1).join(' ') || '';
+        
+        try {
+            const response = await fetch(`/get-role?name=${encodeURIComponent(name)}&nachname=${encodeURIComponent(nachname)}`);
+            if (response.ok) {
+                const data = await response.json();
+                roles[memberName] = data.role;
+            } else {
+                roles[memberName] = 'Member';
+            }
+        } catch (error) {
+            console.error('Error loading role for', memberName, error);
+            roles[memberName] = 'Member';
+        }
+    }
+    
+    return roles;
 }
 
 // Load saved member list
@@ -363,7 +430,23 @@ function saveMemberList(members) {
 // Check admin access
 function checkAdminAccess() {
     const password = localStorage.getItem('adminPassword');
-    return password; // Accept any password
+    return !!password; // Accept any password as admin login for admin page access
+}
+
+async function getCurrentUserRole() {
+    const stored = JSON.parse(localStorage.getItem('userRegistration') || '{}');
+    const fullName = stored.fullName || `${stored.name || ''} ${stored.nachname || ''}`.trim();
+    const roles = await loadSavedRoles();
+    return roles[fullName] || '';
+}
+
+async function isLeaderOrCoLeader() {
+    const role = await getCurrentUserRole();
+    return role === 'Leader' || role === 'CoLeader';
+}
+
+async function canManageMembers() {
+    return checkAdminAccess() || await isLeaderOrCoLeader();
 }
 
 // Save registration to text file
@@ -469,9 +552,9 @@ function adminLogout() {
 }
 
 // Delete member
-function deleteMember(memberName) {
-    if (!checkAdminAccess()) {
-        showNotification('Nur Admins können Mitglieder löschen!', 'error');
+async function deleteMember(memberName) {
+    if (!(await canManageMembers())) {
+        showNotification('Nur Leader, CoLeader oder Admins können Mitglieder löschen!', 'error');
         return;
     }
     
@@ -481,15 +564,30 @@ function deleteMember(memberName) {
         const updatedList = memberList.filter(m => m.name !== memberName);
         saveMemberList(updatedList);
         
-        // Remove role
-        const roles = loadSavedRoles();
-        delete roles[memberName];
-        localStorage.setItem('mitglieder', JSON.stringify(roles));
-        
         // Remove member data
         const memberData = loadMemberData();
         delete memberData[memberName];
         localStorage.setItem('memberData', JSON.stringify(memberData));
+        
+        // Delete text file on server
+        const parts = memberName.trim().split(' ');
+        const name = parts[0] || '';
+        const nachname = parts.slice(1).join(' ') || '';
+        fetch('/delete-member', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, nachname })
+        });
+
+        // Wenn der gelöschte Nutzer der aktuell eingeloggte ist → ausloggen
+        const currentUser = JSON.parse(localStorage.getItem('userRegistration') || '{}');
+        if (currentUser.name === name && currentUser.nachname === nachname) {
+            localStorage.removeItem('userRegistered');
+            localStorage.removeItem('userRegistration');
+            showNotification(`Mitglied "${memberName}" wurde gelöscht!`, 'success');
+            setTimeout(() => location.reload(), 1000);
+            return;
+        }
         
         showNotification(`Mitglied "${memberName}" wurde gelöscht!`, 'success');
         showMitglieder(); // Refresh the page
@@ -497,9 +595,9 @@ function deleteMember(memberName) {
 }
 
 // Add new member
-function addNewMember() {
-    if (!checkAdminAccess()) {
-        showNotification('Nur Admins können Mitglieder hinzufügen!', 'error');
+async function addNewMember() {
+    if (!(await canManageMembers())) {
+        showNotification('Nur Leader, CoLeader oder Admins können Mitglieder hinzufügen!', 'error');
         return;
     }
     
@@ -519,6 +617,7 @@ function addNewMember() {
     
     memberList.push({ name: memberName });
     saveMemberList(memberList);
+    saveMemberRole(memberName, 'Member');
     
     nameInput.value = '';
     showMitglieder(); // Refresh the page
@@ -539,21 +638,22 @@ function saveMemberData(memberName, data) {
 }
 
 // Clear all members
-function clearAllMembers() {
+async function clearAllMembers() {
     localStorage.removeItem('memberList');
     localStorage.removeItem('mitglieder');
     localStorage.removeItem('memberData');
     showNotification('Alle Mitglieder wurden gelöscht!', 'success');
-    showMitglieder(); // Refresh the page
+    await showMitglieder(); // Refresh the page
 }
 
 // Show members page with saved roles
-function showMitglieder() {
+async function showMitglieder() {
     const mainContent = document.querySelector('.dashboard-main');
-    const savedRoles = loadSavedRoles();
+    const savedRoles = await loadSavedRoles();
     const memberList = loadMemberList();
     const memberData = loadMemberData();
     const isAdmin = checkAdminAccess();
+    const canManage = await canManageMembers();
     
     let membersHTML = '';
     
@@ -561,43 +661,23 @@ function showMitglieder() {
         const memberName = member.name;
         const currentRole = savedRoles[memberName];
         const userData = memberData[memberName] || {};
+        const canAddBadge = currentRole === 'Leader' || currentRole === 'CoLeader' ? `<span class="permission-badge">Kann hinzufügen</span>` : '';
         
         membersHTML += `
             <div class="mitglied-item">
                 <div class="mitglied-avatar">${userData.gender === 'female' ? '👩' : userData.gender === 'male' ? '👨' : '👤'}</div>
                 <div class="mitglied-info">
                     <h3>${memberName}</h3>
-                    ${currentRole ? 
-                        `<div class="role-display-container">
-                            <p class="mitglied-role">${currentRole}</p>
-                            <div class="member-details">
-                                ${userData.gender ? `<span class="gender-badge">${userData.gender === 'female' ? 'Frau' : 'Mann'}</span>` : ''}
-                                ${userData.canAdd ? `<span class="permission-badge">Kann hinzufügen</span>` : ''}
-                            </div>
-                            ${(currentRole === 'All for One' || currentRole === 'One for All') && isAdmin ? 
-                                `<div class="admin-controls">
-                                    <button class="change-role-btn" onclick="changeRole('${memberName}')">Rolle ändern</button>
-                                    <button class="edit-gender-btn" onclick="editGender('${memberName}')">Geschlecht ändern</button>
-                                    <button class="permission-btn" onclick="togglePermission('${memberName}')">${userData.canAdd ? 'Entfernen' : 'Hinzufügen'}</button>
-                                </div>` : 
-                                ''
-                            }
-                        </div>` : 
-                        `<div class="role-input-container">
-                            <input type="text" class="role-input" placeholder="Rolle eingeben...">
-                            <div class="role-buttons">
-                                <button class="add-role-btn" onclick="addRole(this, '${memberName}')">All for One</button>
-                                <button class="add-role-btn" onclick="addRole(this, '${memberName}')">One for All</button>
-                                <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Inner Circle</button>
-                                <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Hund</button>
-                                <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Trusted Few</button>
-                                <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Chosen Ones</button>
-                                <button class="add-role-btn" onclick="addRole(this, '${memberName}')">X Restricted X</button>
-                            </div>
-                        </div>`
-                    }
+                    <div class="role-display-container">
+                        <p class="mitglied-role">${currentRole || 'Member'}</p>
+                        <div class="member-details">
+                            ${userData.gender ? `<span class="gender-badge">${userData.gender === 'female' ? 'Frau' : 'Mann'}</span>` : ''}
+                            ${canAddBadge}
+                        </div>
+                        ${isAdmin ? `<button class="change-role-btn" onclick="changeRole('${memberName}')">Rolle ändern</button>` : ''}
+                    </div>
                 </div>
-                ${isAdmin ? `<button class="delete-member-btn" onclick="deleteMember('${memberName}')">🗑️</button>` : ''}
+                ${canManage ? `<button class="delete-member-btn" onclick="deleteMember('${memberName}')">🗑️</button>` : ''}
             </div>
         `;
     });
@@ -606,15 +686,14 @@ function showMitglieder() {
         <div class="mitglieder-container">
             <h1 class="page-title">Mitglieder</h1>
             
-            ${!isAdmin ? `
+            ${!canManage ? `
             <div class="access-denied">
-                <p>⚠️ Nur Admins können Mitglieder hinzufügen oder löschen</p>
-                <p>Bitte unter "Admin" einloggen mit Passwort "Black"</p>
+                <p>⚠️ Nur Leader, CoLeader oder Admins können Mitglieder hinzufügen oder löschen</p>
             </div>` : ''
             }
             
             <!-- Add new member section -->
-            ${isAdmin ? `
+            ${canManage ? `
             <div class="add-member-section">
                 <div class="add-member-form">
                     <input type="text" id="new-member-name" class="member-input" placeholder="Name eingeben...">
@@ -634,7 +713,7 @@ function showMitglieder() {
 }
 
 // Edit member gender
-function editGender(memberName) {
+async function editGender(memberName) {
     if (!checkAdminAccess()) {
         showNotification('Nur Admins können Geschlecht ändern!', 'error');
         return;
@@ -653,11 +732,11 @@ function editGender(memberName) {
         return;
     }
     
-    showMitglieder(); // Refresh the page
+    await showMitglieder(); // Refresh the page
 }
 
 // Toggle member permission to add others
-function togglePermission(memberName) {
+async function togglePermission(memberName) {
     if (!checkAdminAccess()) {
         showNotification('Nur Admins können Berechtigungen ändern!', 'error');
         return;
@@ -674,7 +753,7 @@ function togglePermission(memberName) {
         showNotification(`${memberName} kann keine Mitglieder mehr hinzufügen`, 'success');
     }
     
-    showMitglieder(); // Refresh the page
+    await showMitglieder(); // Refresh the page
 }
 
 // Add role to member
@@ -696,10 +775,7 @@ function addRole(button, memberName) {
     roleDisplay.className = 'role-display-container';
     roleDisplay.innerHTML = `
         <p class="mitglied-role">${roleText}</p>
-        ${(roleText === 'All for One' || roleText === 'One for All') ? 
-            `<button class="change-role-btn" onclick="changeRole('${memberName}')">Rolle ändern</button>` : 
-            ''
-        }
+        <button class="change-role-btn" onclick="changeRole('${memberName}')">Rolle ändern</button>
     `;
     mitgliedInfo.appendChild(roleDisplay);
     
@@ -714,6 +790,25 @@ function saveMemberRole(memberName, role) {
     const members = JSON.parse(localStorage.getItem('mitglieder') || '{}');
     members[memberName] = role;
     localStorage.setItem('mitglieder', JSON.stringify(members));
+    
+    // Update role in member file on server
+    const parts = memberName.trim().split(' ');
+    const name = parts[0] || '';
+    const nachname = parts.slice(1).join(' ') || '';
+    
+    fetch('/update-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, nachname, role })
+    }).then(response => {
+        if (response.ok) {
+            console.log('Rolle erfolgreich in Datei aktualisiert');
+        } else {
+            console.error('Fehler beim Aktualisieren der Rolle in Datei');
+        }
+    }).catch(error => {
+        console.error('Server nicht erreichbar für Rollen-Update:', error);
+    });
 }
 
 // Change role function
@@ -749,13 +844,10 @@ function changeRole(memberName) {
     roleInputContainer.innerHTML = `
         <input type="text" class="role-input" placeholder="Rolle eingeben...">
         <div class="role-buttons">
-            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">All for One</button>
-            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">One for All</button>
-            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Inner Circle</button>
+            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Leader</button>
+            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">CoLeader</button>
+            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Member</button>
             <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Hund</button>
-            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Trusted Few</button>
-            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">Chosen Ones</button>
-            <button class="add-role-btn" onclick="addRole(this, '${memberName}')">X Restricted X</button>
         </div>
     `;
     
@@ -833,50 +925,92 @@ function showDashboard() {
 
 // Load activities from localStorage
 function loadActivities() {
-    // Clear all activities from localStorage
-    localStorage.removeItem('activities');
-    
     const activityList = document.querySelector('.activity-list');
     if (activityList) {
-        activityList.innerHTML = ''; // Clear the display
+        addActivityItem(activityList);
     }
 }
 
 // Show contracts page
 function showVertraege() {
     const mainContent = document.querySelector('.dashboard-main');
-    const vertraege = [
-        { id: 'metallurgie-i', title: 'Metallurgie I', menge: '860 Stück' }
-    ];
 
-    const rowsHtml = vertraege
-        .map(
-            (v) => `
-                <li class="vertraege-list-item" data-vertrag-id="${v.id}">
-                    <div class="vertraege-row">
-                        <div class="vertraege-row-left">
-                            <span class="vertraege-item-title">${v.title}</span>
-                            <span class="vertraege-stueck-window">${v.menge}</span>
-                        </div>
-                        <div class="vertraege-row-actions">
-                            <button class="vertraege-add-btn">+</button>
-                        </div>
-                    </div>
-                </li>
-            `
-        )
-        .join('');
+    // Flag mit tatsächlichen Aktivitäten synchronisieren
+    const activities = JSON.parse(localStorage.getItem('activities') || '[]');
+    const vertragAktiv = activities.some(a => a.text && a.text.includes('Metallurgie I'));
+    if (!vertragAktiv) localStorage.removeItem('vertrag_metallurgie');
+    const isAdded = vertragAktiv;
+
+    const isAdmin = checkAdminAccess();
+    const memberList = loadMemberList();
+    const assignment = JSON.parse(localStorage.getItem('vertrag_assign_metallurgie') || '{}');
+    const assignedMembers = assignment.members || [];
+    const assignedNote = assignment.note || '';
+
+    const stueckData = JSON.parse(localStorage.getItem('stueck_members_metallurgie') || '{}');
+
+    const membersHTML = memberList.map(m => `
+        <label class="vertrag-member-label">
+            <input type="checkbox" value="${m.name}" ${assignedMembers.includes(m.name) ? 'checked' : ''}> ${m.name}
+        </label>
+    `).join('');
+
+    const assignedDisplay = assignedMembers.length > 0 ? `
+        <div class="vertrag-assigned">
+            ${assignedMembers.map(m => `
+                <span class="vertrag-assigned-tag">
+                    ${m}
+                    ${isAdmin ? `<button class="vertrag-member-delete" onclick="deleteVertragMember('metallurgie','${m}')">×</button>` : ''}
+                </span>`).join('')}
+            ${assignedNote ? `<p class="vertrag-assigned-note">${assignedNote}</p>` : ''}
+        </div>` : '';
+
+    const aktuellStueck = parseInt(localStorage.getItem('stueck_metallurgie') || 0);
 
     mainContent.innerHTML = `
         <div class="vertraege-container">
             <h1 class="page-title">Verträge</h1>
             <div class="vertraege-section">
-                <div class="vertraege-item">
-                    <div class="vertraege-header">
-                        <h3>Metallurgie I</h3>
-                        <button class="vertraege-plus-btn" onclick="addVertrag()">+</button>
+                <div class="vertraege-row-wrapper">
+                    <div class="vertraege-item">
+                        <div class="vertraege-header">
+                            <h3>Metallurgie I</h3>
+                            <div class="vertraege-actions">
+                                <button class="vertraege-plus-btn" onclick="addVertrag()" ${isAdded ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>+</button>
+                                <button class="vertraege-assign-btn" onclick="toggleAssignPanel('metallurgie')" ${!isAdded ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>+</button>
+                            </div>
+                        </div>
+                        <div class="stueck-tracker">
+                            <span class="stueck-label">Abzugeben: <strong>${aktuellStueck} / 840 Stück</strong></span>
+                            <div class="stueck-progress-bar">
+                                <div class="stueck-progress-fill" style="width:${Math.min((aktuellStueck/840)*100,100)}%"></div>
+                            </div>
+                        </div>
+
+                        <div class="vertrag-assign-panel" id="assign-metallurgie" style="display:none;">
+                            <div class="vertrag-members-list">
+                                ${membersHTML || '<p style="color:var(--text-secondary)">Keine Mitglieder vorhanden</p>'}
+                            </div>
+                            <button class="vertrag-save-btn" onclick="saveVertragAssignment('metallurgie')">Speichern</button>
+                        </div>
                     </div>
-                    <p>840 Stück</p>
+                    ${assignedMembers.length > 0 ? `
+                    <div class="vertrag-assigned-sidebar">
+                        ${assignedMembers.map(m => `
+                            <div class="vertrag-member-stueck-row">
+                                <span class="vertrag-assigned-tag">
+                                    ${m}
+                                    ${isAdmin ? `<button class="vertrag-member-delete" onclick="deleteVertragMember('metallurgie','${m}')">×</button>` : ''}
+                                </span>
+                                <div class="member-stueck-input-row">
+                                    <input type="number" class="member-stueck-input" placeholder="Stück" min="0"
+                                        value="${stueckData[m] || 0}"
+                                        onchange="updateMemberStueck('metallurgie', '${m}', this.value, 840)">
+                                    <span class="member-stueck-total">/ 840</span>
+                                </div>
+                            </div>`).join('')}
+                        ${assignedNote ? `<p class="vertrag-assigned-note">${assignedNote}</p>` : ''}
+                    </div>` : ''}
                 </div>
             </div>
         </div>
@@ -886,25 +1020,108 @@ function showVertraege() {
     setupNavigation();
 }
 
-// Add contract function
-function addVertrag() {
-    console.log('addVertrag function called'); // Debug
-    
-    // Check if contract already exists
-    const activities = JSON.parse(localStorage.getItem('activities') || '[]');
-    const alreadyExists = activities.some(activity => 
-        activity.text === 'Vertrag "Metallurgie I" hinzugefügt'
-    );
-    
-    if (alreadyExists) {
-        showNotification('Vertrag "Metallurgie I" wurde bereits hinzugefügt!', 'error');
+function updateMemberStueck(id, memberName, wert, ziel) {
+    const data = JSON.parse(localStorage.getItem(`stueck_members_${id}`) || '{}');
+    data[memberName] = parseInt(wert) || 0;
+    localStorage.setItem(`stueck_members_${id}`, JSON.stringify(data));
+
+    // Gesamtsumme berechnen
+    const gesamt = Object.values(data).reduce((a, b) => a + b, 0);
+    localStorage.setItem(`stueck_${id}`, gesamt);
+
+    if (gesamt >= ziel) {
+        // Textdatei auf Server speichern
+        const assignment = JSON.parse(localStorage.getItem(`vertrag_assign_${id}`) || '{}');
+        fetch('/save-vertrag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                vertragsname: 'Metallurgie I',
+                material: 'Eisenerz',
+                ziel: ziel,
+                mitglieder: assignment.members || [],
+                stueckData: data
+            })
+        });
+
+        // Vertrag abgeschlossen
+        localStorage.removeItem(`stueck_members_${id}`);
+        localStorage.setItem(`stueck_${id}`, 0);
+        localStorage.removeItem(`vertrag_assign_${id}`);
+        const activities = JSON.parse(localStorage.getItem('activities') || '[]');
+        localStorage.setItem('activities', JSON.stringify(activities.filter(a => !a.text || !a.text.includes('Metallurgie I'))));
+        localStorage.removeItem('vertrag_metallurgie');
+        showNotification('Vertrag abgeschlossen! 840 Stück erreicht.', 'success');
+    }
+    showVertraege();
+}
+
+function deleteVertragMember(id, memberName) {
+    const assignment = JSON.parse(localStorage.getItem(`vertrag_assign_${id}`) || '{}');
+    assignment.members = (assignment.members || []).filter(m => m !== memberName);
+    localStorage.setItem(`vertrag_assign_${id}`, JSON.stringify(assignment));
+    showNotification(`${memberName} entfernt!`, 'success');
+    showVertraege();
+}
+
+function toggleAssignPanel(id) {
+    const panel = document.getElementById(`assign-${id}`);
+    if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function saveVertragAssignment(id) {
+    const panel = document.getElementById(`assign-${id}`);
+    const selected = [...panel.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+
+    if (selected.length === 0) {
+        showNotification('Bitte mindestens ein Mitglied auswählen!', 'error');
         return;
     }
-    
-    // Add activity to dashboard
+
+    const data = JSON.parse(localStorage.getItem(`vertrag_assign_${id}`) || '{}');
+    data.members = selected;
+    localStorage.setItem(`vertrag_assign_${id}`, JSON.stringify(data));
+
+    showNotification('Gespeichert!', 'success');
+    showVertraege();
+}
+
+function addStueck(id, ziel) {
+    const input = document.getElementById('stueck-add');
+    const hinzu = parseInt(input.value) || 0;
+    if (hinzu <= 0) { showNotification('Bitte eine gültige Anzahl eingeben!', 'error'); return; }
+
+    const aktuell = parseInt(localStorage.getItem(`stueck_${id}`) || 0);
+    const neu = aktuell + hinzu;
+    localStorage.setItem(`stueck_${id}`, neu);
+
+    if (neu >= ziel) {
+        // Vertrag abgeschlossen
+        localStorage.setItem(`stueck_${id}`, 0);
+        const activities = JSON.parse(localStorage.getItem('activities') || '[]');
+        const updated = activities.filter(a => !a.text || !a.text.includes('Metallurgie I'));
+        localStorage.setItem('activities', JSON.stringify(updated));
+        localStorage.removeItem('vertrag_metallurgie');
+        showNotification('🎉 Vertrag abgeschlossen! 840 Stück erreicht.', 'success');
+    } else {
+        showNotification(`${neu} / ${ziel} Stück abgegeben.`, 'success');
+    }
+    showVertraege();
+}
+
+// Add contract function
+function addVertrag() {
+    const added = localStorage.getItem('vertrag_metallurgie') === 'true';
+    if (added) {
+        showNotification('Vertrag wurde bereits hinzugefügt!', 'error');
+        return;
+    }
+
+    localStorage.setItem('vertrag_metallurgie', 'true');
     addVertragInternal();
-    
+
     showNotification('Vertrag hinzugefügt!', 'success');
+    showVertraege();
 }
 
 function addVertragInternal() {
@@ -968,9 +1185,12 @@ function deleteActivity(index) {
     const deletedActivity = activities[index];
     activities.splice(index, 1);
     localStorage.setItem('activities', JSON.stringify(activities));
-    
-    console.log('Deleted activity:', deletedActivity); // Debug
-    
+
+    // Vertrag-Flag zurücksetzen wenn Vertrag-Aktivität gelöscht
+    if (deletedActivity && deletedActivity.text && deletedActivity.text.includes('Metallurgie I')) {
+        localStorage.removeItem('vertrag_metallurgie');
+    }
+
     // Refresh activity list
     const activityList = document.querySelector('.activity-list');
     if (activityList) {
