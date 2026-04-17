@@ -1,6 +1,0 @@
-Name: MICHAEL
-Nachname: Cooper
-Email: michaelferdik89@gmail.com
-ID: 23626
-
-Member: CoLeader
