@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "rewrites": [
+    { "source": "/save-member", "destination": "/server.js" },
+    { "source": "/check-member", "destination": "/server.js" },
+    { "source": "/update-role", "destination": "/server.js" },
+    { "source": "/get-role", "destination": "/server.js" },
+    { "source": "/delete-member", "destination": "/server.js" }
+  ]
+}
